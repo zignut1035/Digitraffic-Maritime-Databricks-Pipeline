@@ -1,0 +1,54 @@
+resources:
+  jobs:
+    ais_ingestion_job:
+      name: "AIS Bronze-Silver-Gold Pipeline"
+      tasks:
+        - task_key: bronze_ingest
+          notebook_task:
+            notebook_path: ../Notebooks/02_autoloader_to_bronze
+          new_cluster:
+            spark_version: "15.4.x-scala2.12"
+            node_type_id: "Standard_DS3_v2"
+            num_workers: 1
+
+        - task_key: silver_ais
+          depends_on:
+            - task_key: bronze_ingest
+          notebook_task:
+            notebook_path: ../Notebooks/03a_silver_ais
+          new_cluster:
+            spark_version: "15.4.x-scala2.12"
+            node_type_id: "Standard_DS3_v2"
+            num_workers: 1
+
+        - task_key: silver_port_calls
+          depends_on:
+            - task_key: bronze_ingest
+          notebook_task:
+            notebook_path: ../Notebooks/03b_silver_port_calls
+          new_cluster:
+            spark_version: "15.4.x-scala2.12"
+            node_type_id: "Standard_DS3_v2"
+            num_workers: 1
+
+        - task_key: silver_sea_state
+          depends_on:
+            - task_key: bronze_ingest
+          notebook_task:
+            notebook_path: ../Notebooks/03c_silver_sea_state
+          new_cluster:
+            spark_version: "15.4.x-scala2.12"
+            node_type_id: "Standard_DS3_v2"
+            num_workers: 1
+
+        - task_key: gold_aggregate
+          depends_on:
+            - task_key: silver_ais
+            - task_key: silver_port_calls
+            - task_key: silver_sea_state
+          notebook_task:
+            notebook_path: ../Notebooks/04_silver_to_gold
+          new_cluster:
+            spark_version: "15.4.x-scala2.12"
+            node_type_id: "Standard_DS3_v2"
+            num_workers: 1

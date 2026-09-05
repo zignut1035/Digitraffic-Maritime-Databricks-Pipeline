@@ -1,16 +1,20 @@
 # 🚢 Digitraffic Maritime Trajectory Pipeline — Multi-Cadence AIS Medallion Architecture
 
-> A Databricks Lakeflow pipeline that ingests live vessel AIS positions, port calls, and sea-state data from Finland's Digitraffic API, processes them through a bronze/silver/gold medallion architecture, and publishes both a live vessel-tracking snapshot **and** a full historical trajectory table — each data source refreshed at its own natural update cadence.
+> A Databricks Lakeflow pipeline that ingests live vessel AIS positions, port calls, and sea-state data from Finland's Digitraffic API, processes them through a bronze/silver/gold medallion architecture, and publishes both a live vessel-tracking snapshot **and** a full historical trajectory table — each data source refreshed at its own natural update cadence. Deployed and version-controlled as a Databricks Asset Bundle with GitHub Actions CI/CD.
 
 ![Python](https://img.shields.io/badge/Python-3.x-blue?style=flat-square&logo=python)
 ![PySpark](https://img.shields.io/badge/PySpark-Structured%20Streaming-orange?style=flat-square&logo=apachespark)
 ![Delta Lake](https://img.shields.io/badge/Delta%20Lake-Medallion%20Architecture-teal?style=flat-square)
 ![Databricks](https://img.shields.io/badge/Databricks-Lakeflow%20Jobs-red?style=flat-square&logo=databricks)
 ![Azure](https://img.shields.io/badge/Azure-Data%20Lake%20Storage-0089D6?style=flat-square&logo=microsoftazure)
+![CI/CD](https://img.shields.io/badge/CI%2FCD-GitHub%20Actions-2088FF?style=flat-square&logo=githubactions)
 ![Status](https://img.shields.io/badge/Status-Active-brightgreen?style=flat-square)
 
 ---
-<img width="594" height="600" alt="Screenshot_2-9-2026_21433_adb-7405614385684070 10 azuredatabricks net" src="https://github.com/user-attachments/assets/4f67109f-3d20-4e5a-8c55-f7bee96953d4" />
+
+
+<img width="274" height="275" alt="{934C2D82-0EF1-47F4-886A-B3065B1FDEF3}" src="https://github.com/user-attachments/assets/18bf73af-cc72-457b-89b1-75779fc9806a" />
+
 ## Overview
 
 The [Digitraffic Marine API](https://www.digitraffic.fi/en/marine-traffic/) publishes live AIS vessel positions, port call schedules, and sea-state buoy readings for Finnish waters. This project builds a fully automated ingestion-to-analytics pipeline that:
@@ -23,6 +27,8 @@ The [Digitraffic Marine API](https://www.digitraffic.fi/en/marine-traffic/) publ
 6. **Runs each data source on its own schedule**, matched to how often the underlying source actually changes, rather than forcing everything onto one refresh cycle
 
 Each of the three sources is fetched, bronzed, and silvered completely independently — a slow-changing source (sea state) doesn't hold back a fast-changing one (AIS), and a stalled job on one source doesn't break the others.
+
+The entire job/pipeline definition is deployed as a **Databricks Asset Bundle**, version-controlled in this repository and deployed automatically via **GitHub Actions** — see [CI/CD & Deployment](#cicd--deployment) below.
 
 ---
 
@@ -80,9 +86,13 @@ Each of the three sources is fetched, bronzed, and silvered completely independe
     │            (many rows per vessel — full movement history)            │
     └──────────────────────────────────────────────────────────────────────┘
 
+<!-- Add your Databricks Jobs UI DAG screenshot here -->
+<!-- ![Job DAG](https://github.com/user-attachments/assets/your-dag-image-id) -->
+
 ---
 
 ## Job Schedules
+<img width="386" height="188" alt="{D35B1286-CC09-48F9-B28D-A3203753E835}" src="https://github.com/user-attachments/assets/1002d1fc-a93c-43f9-a74e-bfaf009c7732" />
 
 Each source is fetched and processed on a cadence matched to how often
 Digitraffic actually updates it — polling faster than the source changes
@@ -115,9 +125,51 @@ needed, and no two jobs ever race to overwrite the same table.
 
 ---
 
+## CI/CD & Deployment
+<img width="409" height="299" alt="{9DA6A21E-10C9-4242-B6F3-C2BA6B53E89E}" src="https://github.com/user-attachments/assets/5515024e-5426-407a-9688-9a4f0b018642" />
+
+This pipeline is deployed as a **Databricks Asset Bundle (DAB)**, not
+configured manually through the UI — the entire job definition
+(`resources/ais_job.yml`) is version-controlled alongside the notebook
+code, so the pipeline can be validated, deployed, and reproduced
+consistently across environments.
+
+- **`databricks.yml`** defines the bundle and its dev/prod targets
+- **`resources/ais_job.yml`** declares all 5 tasks (fetch → bronze →
+  3× parallel silver → gold) and their dependency graph as code
+- **GitHub Actions** (`.github/workflows/deploy.yml`) automatically:
+  - Runs `databricks bundle validate` on every pull request, catching
+    configuration errors before merge
+  - Runs `databricks bundle deploy -t prod` automatically when changes
+    are merged to `main`
+
+This means a schedule change, a new task, or a notebook path update is
+made once in a YAML file, reviewed via a pull request, and deployed
+automatically — rather than manually reproduced by clicking through the
+Databricks Jobs UI.
+
+    databricks bundle validate                        # check config before deploying
+    databricks bundle deploy -t dev                    # deploy to a dev target
+    databricks bundle run ais_ingestion_job -t dev      # trigger a run
+
+Compute is fully **serverless** — no cluster configuration is defined in
+the job spec, so each task runs on Databricks serverless compute
+automatically, with no manual cluster sizing or management.
+
+<!-- Add your GitHub Actions successful run screenshot here -->
+<!-- ![CI/CD Run](https://github.com/user-attachments/assets/your-actions-image-id) -->
+
+---
+
 ## Repository Structure
 
     Digitraffic-Maritime-Pipeline/
+    ├── databricks.yml               # Bundle definition (dev/prod targets)
+    ├── resources/
+    │   └── ais_job.yml              # Job + task DAG defined as code
+    ├── .github/
+    │   └── workflows/
+    │       └── deploy.yml           # CI/CD: validate on PR, deploy on merge
     └── Notebooks/
         ├── 01_fetch_to_landing.py     # Polls Digitraffic REST APIs → raw JSON in landing zone
         ├── 02_bronze_autoloader.py    # Auto Loader: landing JSON → Bronze Delta (append-only)
@@ -173,32 +225,48 @@ unchanged repeated pings.
 | Delta Lake | ACID storage layer across all three medallion tiers |
 | Unity Catalog | Catalog/schema management, table lineage, access grants |
 | Databricks Lakeflow Jobs | Multi-cadence orchestration, DAG dependencies |
+| Databricks Asset Bundles (DAB) | Infrastructure-as-code deployment of jobs/pipelines |
+| GitHub Actions | CI/CD — validates config on PRs, deploys on merge to main |
 | Databricks SQL Warehouse | Serverless SQL compute for querying Gold tables and powering dashboards |
 | Azure Data Lake Storage (ABFSS) | Underlying object storage for landing/bronze/silver/gold |
 | Digitraffic Marine API | Live AIS, port call, and sea-state data source |
-| folium | Interactive Leaflet-based vessel map (ad hoc / notebook use) |
 
 ---
 
 ## Installation & Usage
 
 This pipeline is designed to run entirely inside Databricks via Lakeflow
-Jobs — there's no local execution path, since it depends on Unity Catalog
+Jobs, deployed via a Databricks Asset Bundle — there's no local execution
+path for the notebooks themselves, since they depend on Unity Catalog
 tables, `dbutils`, and `spark` session objects available only in a
-Databricks runtime.
+Databricks runtime. The bundle CLI commands below run locally and deploy
+to the workspace.
 
-    # 1. Clone into Databricks Repos (Workspace → Repos → Add Repo)
-    https://github.com/<your-username>/Digitraffic-Maritime-Pipeline.git
+    # 1. Clone the repository
+    git clone https://github.com/zignut1035/Digitraffic-Maritime-Pipeline.git
+    cd Digitraffic-Maritime-Pipeline
 
-    # 2. Create the Unity Catalog schemas (run once)
+    # 2. Install the Databricks CLI and authenticate
+    databricks configure --token
+    # (enter your workspace host and a personal access token)
+
+    # 3. Create the Unity Catalog schemas (run once)
     # — see the CREATE SCHEMA statements referenced in 02_bronze_autoloader
 
-    # 3. Create three Lakeflow Jobs, each wiring up the notebooks above
-    #    with the `datasets` parameter set per the Job Schedules table
+    # 4. Validate and deploy the bundle
+    databricks bundle validate
+    databricks bundle deploy -t dev
 
-    # 4. Create a Databricks SQL Warehouse (SQL → SQL Warehouses → Create)
-    #    for querying Gold and building dashboards, separate from the
-    #    all-purpose/job cluster running the pipeline notebooks
+    # 5. Trigger a run
+    databricks bundle run ais_ingestion_job -t dev
+
+    # 6. Create a Databricks SQL Warehouse (SQL → SQL Warehouses → Create)
+    #    for querying Gold and building dashboards
+
+For automatic deployment on every merge to `main`, configure the
+`DATABRICKS_HOST` and `DATABRICKS_TOKEN` repository secrets in
+**Settings → Secrets and variables → Actions** — see
+`.github/workflows/deploy.yml`.
 
 ### Querying the data
 
@@ -279,3 +347,5 @@ refresh manually or on a schedule to see newer pings.
   (e.g. Digitraffic API downtime detection)
 - Evaluate date-based partitioning for `vessel_trajectory` once row
   volume grows significantly
+- Add automated tests for merge/dedup logic, run as part of the CI
+  pipeline before deployment

@@ -1,0 +1,18 @@
+bundle:
+  name: ais-pipeline
+
+include:
+  - resources/*.yml
+
+targets:
+  dev:
+    mode: development
+    default: true
+    workspace:
+      host: https://<your-workspace-url>
+    
+  prod:
+    mode: production
+    workspace:
+      host: https://<your-workspace-url>
+      root_path: /Shared/ais-pipeline/prod
